@@ -46,16 +46,13 @@ same whether it is reasoning about a real cluster or a fixture.
 ## Running the demo
 
 ```bash
-# once
+# once. -f on the app dir, NOT on kustomization.yaml (that needs -k).
 kubectl apply -f namespace.yaml
 kubectl apply -f rbac/warden-reader.yaml
-kubectl apply -f apps/checkout-svc/
+kubectl apply -f apps/checkout-svc/deployment.yaml -f apps/checkout-svc/service.yaml
 
 # prove the reader token cannot mutate anything — keep this output for the video
-TOKEN=$(kubectl -n demo get secret warden-reader-token -o jsonpath='{.data.token}' | base64 -d)
-APISERVER=$(kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}')
-kubectl --token=$TOKEN --server=$APISERVER -n demo get pods                     # works
-kubectl --token=$TOKEN --server=$APISERVER -n demo delete deploy checkout-svc   # Forbidden
+./scripts/verify-rbac.sh
 
 # break it
 ./scripts/inject.sh bad-config
@@ -77,6 +74,27 @@ minutes ago, did this."*
 
 **Rehearse the full sequence three times before recording.** The rules forbid
 editing around a failure, and `restore` before every take is not optional.
+
+## Proving the read-only claim
+
+`./scripts/verify-rbac.sh` is the only correct way to test it, and the reason is
+worth knowing.
+
+The obvious test is wrong:
+
+```bash
+kubectl --token=$TOKEN --server=$APISERVER -n demo delete deploy checkout-svc
+```
+
+That *appears* to work — and it deletes the deployment. Not because RBAC failed,
+but because an AKS admin kubeconfig authenticates with **client certificates**,
+and Kubernetes accepts a valid client cert regardless of any bearer token you
+also pass. `--token` is silently ignored and the command runs as cluster-admin.
+
+So the "proof" proves nothing. Recording it would mean demonstrating a
+governance guarantee that was never actually tested. The script passes
+`--kubeconfig=/dev/null`, which removes the context and its certs and leaves the
+token as the only credential.
 
 ## Building the image
 

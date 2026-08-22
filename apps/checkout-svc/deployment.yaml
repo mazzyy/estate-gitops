@@ -18,7 +18,7 @@ spec:
     metadata:
       labels:
         app: checkout-svc
-        git-sha: "e988c40"
+        git-sha: "72c29df"
     spec:
       containers:
         - name: checkout

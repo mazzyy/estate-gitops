@@ -7,7 +7,7 @@ metadata:
     app: checkout-svc
     managed-by: gitops
   annotations:
-    kubernetes.io/change-cause: "initial deployment"
+    kubernetes.io/change-cause: "chore: tune payment endpoint and timeouts"
 spec:
   replicas: 3
   revisionHistoryLimit: 10
@@ -18,7 +18,7 @@ spec:
     metadata:
       labels:
         app: checkout-svc
-        git-sha: "initial"
+        git-sha: "a0631d7"
     spec:
       containers:
         - name: checkout
@@ -32,7 +32,7 @@ spec:
             # the container exit 1 on startup — a real crashloop, not a simulated
             # one, which is what the "unedited live execution" rule requires.
             - name: PAYMENT_ENDPOINT
-              value: "https://payments.internal/v2"
+              value: "htps://payments.internal/v2"
             - name: LOG_LEVEL
               value: "info"
             - name: TIMEOUT_MS

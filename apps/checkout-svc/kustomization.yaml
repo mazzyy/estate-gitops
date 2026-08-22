@@ -3,10 +3,25 @@ kind: Kustomization
 
 namespace: demo
 
+# The namespace itself is composed at the repository root, not here.
+#
+# Kustomize refuses `../../namespace.yaml` outright — a base may not reach
+# above its own directory, because a build root that can read arbitrary parent
+# paths is a supply-chain hole. The rule is right; this overlay was wrong.
+# `kubectl apply -k .` from the repository root applies namespace and app
+# together; `-k apps/checkout-svc` applies just the app into a namespace that
+# already exists.
 resources:
-  - ../../namespace.yaml
   - deployment.yaml
   - service.yaml
 
-commonLabels:
-  managed-by: gitops
+# There is deliberately no `commonLabels` here.
+#
+# It looked harmless — every manifest already carries `managed-by: gitops` in
+# metadata.labels, so it read as a tidy way to say that once. But commonLabels
+# also injects into `spec.selector.matchLabels`, and a Deployment's selector is
+# immutable after creation. The live Deployment was created with `kubectl apply
+# -f`, so its selector is `app: checkout-svc` alone; the first successful
+# `apply -k` would have tried to add `managed-by: gitops` to it and been
+# rejected by the API server — a failure that would have surfaced mid-demo and
+# looked like the agent broke the cluster.

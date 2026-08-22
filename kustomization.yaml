@@ -1,0 +1,17 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# The whole estate, in dependency order.
+#
+#   kubectl apply -k .
+#
+# The namespace has to exist before anything lands in it, and a base cannot
+# reach above its own directory to pull it in, so composition happens here.
+resources:
+  - namespace.yaml
+  - apps/checkout-svc
+
+# rbac/ is intentionally absent. The reader ServiceAccount and its Role are
+# applied deliberately, once, by an operator — not swept up by a routine
+# `apply -k .` that a merged pull request could trigger. Warden's own read
+# credential must not be something a Warden pull request can widen.

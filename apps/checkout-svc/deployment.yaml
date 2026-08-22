@@ -28,47 +28,8 @@ spec:
           # either way — the process genuinely exits and the kubelet genuinely
           # restarts it. The app source in ../../app/ is the same logic, kept
           # for anyone who wants a proper image.
-          image: python:3.12-slim
+          image: ghcr.io/mazzyy/checkout-svc:1.4.2
           imagePullPolicy: IfNotPresent
-          command: ["python", "-u", "-c"]
-          args:
-            - |
-              import http.server, os, sys, threading
-              from urllib.parse import urlparse
-
-              VERSION = "1.4.2"
-              print(f"starting checkout-svc {VERSION}")
-
-              endpoint = os.environ.get("PAYMENT_ENDPOINT", "")
-              print(f"config: PAYMENT_ENDPOINT={endpoint}")
-
-              scheme = urlparse(endpoint).scheme
-              if scheme not in ("http", "https"):
-                  # This exact line is what the Diagnostician correlates against
-                  # the deploy that introduced it. Byte-identical to the offline
-                  # fake estate, so the agent reasons the same either way.
-                  print(f'FATAL: unsupported URL scheme "{scheme}" in PAYMENT_ENDPOINT')
-                  print("shutting down after 0.4s")
-                  sys.exit(1)
-
-              warm = []
-              target = int(os.environ.get("WARMUP_MB", "8"))
-              print(f"warming cache ({target}MB target)")
-              for _ in range(target):
-                  warm.append(bytearray(1024 * 1024))
-              print(f"cache warm: {target}MB resident")
-
-              class H(http.server.BaseHTTPRequestHandler):
-                  def do_GET(self):
-                      self.send_response(200)
-                      self.send_header("Content-Type", "application/json")
-                      self.end_headers()
-                      self.wfile.write(b'{"status":"ok","version":"1.4.2"}')
-                  def log_message(self, *a):
-                      pass
-
-              print("listening on :8080")
-              http.server.HTTPServer(("0.0.0.0", 8080), H).serve_forever()
           ports:
             - name: http
               containerPort: 8080
@@ -77,7 +38,7 @@ spec:
             # container exit 1 on startup — a real crashloop, not a simulated
             # one, which is what "unedited live execution" requires.
             - name: PAYMENT_ENDPOINT
-              value: "htps://payments.internal/v2"
+              value: "https://payments.internal/v2"
             - name: LOG_LEVEL
               value: "info"
             - name: TIMEOUT_MS

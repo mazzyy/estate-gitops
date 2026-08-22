@@ -1,0 +1,91 @@
+# The one credential in the system that can change the estate.
+#
+# It belongs to CI, not to any agent. An agent proposes a pull request; a human
+# approves it; this identity applies the merged result. That is the whole
+# governance story, and until now the applier half of it was a human running
+# kubectl by hand while a workflow file claimed otherwise.
+#
+# What this deliberately is NOT: a Contributor service principal on the
+# resource group. That was the original design, and it would have handed a
+# GitHub Actions secret the power to delete the cluster, the node pool, and the
+# resource group — in order to patch one Deployment in one namespace. The blast
+# radius of the applier must be no larger than the blast radius the agents are
+# held to, which every agent manifest pins to `demo`.
+#
+#   kubectl apply -f rbac/warden-sync.yaml
+#   ./scripts/verify-sync-rbac.sh
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: warden-sync
+  namespace: demo
+  labels:
+    app.kubernetes.io/part-of: warden
+    warden.dev/role: applier
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: warden-sync
+  namespace: demo
+rules:
+  # Enough to run `kubectl apply` and watch the rollout. Nothing more.
+  - apiGroups: [""]
+    resources: [services, configmaps]
+    verbs: [get, list, watch, create, update, patch]
+
+  - apiGroups: ["apps"]
+    resources: [deployments]
+    verbs: [get, list, watch, create, update, patch]
+
+  # Read-only. Rollout status needs to see the ReplicaSets a Deployment owns,
+  # but nothing in a sync should be editing them directly.
+  - apiGroups: ["apps"]
+    resources: [replicasets]
+    verbs: [get, list, watch]
+
+  - apiGroups: [""]
+    resources: [pods, pods/log, events]
+    verbs: [get, list, watch]
+
+  # `delete` appears nowhere above, on purpose.
+  #
+  # `kubectl apply` never needs it: a removed field is a patch, and a removed
+  # resource is handled by prune, which this pipeline does not use. Granting
+  # delete would mean a merged pull request could remove a Deployment
+  # entirely — turning "review the diff" into the only thing standing between
+  # a bad patch and an outage. Without it, the worst a merged patch can do is
+  # roll out a broken pod spec, which Kubernetes itself refuses to complete
+  # while the old ReplicaSet keeps serving. That is exactly what happened with
+  # the htps:// typo: a blocked rollout, not an outage.
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: warden-sync
+  namespace: demo
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: warden-sync
+subjects:
+  - kind: ServiceAccount
+    name: warden-sync
+    namespace: demo
+---
+# A long-lived token for CI. Since 1.24 a ServiceAccount has no token Secret
+# unless one is requested like this; the alternative, `kubectl create token`,
+# expires in an hour and there is nobody at 3am to mint a new one.
+#
+# The trade-off is real: this token does not rotate. It is scoped to one
+# namespace, cannot delete, and lives in GitHub Actions secrets — and
+# `scripts/verify-sync-rbac.sh` proves the scope rather than asserting it.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: warden-sync-token
+  namespace: demo
+  annotations:
+    kubernetes.io/service-account.name: warden-sync
+type: kubernetes.io/service-account-token

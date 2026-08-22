@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: demo
+  labels:
+    warden.dev/managed: "true"
+    # The blast radius. Every agent manifest in the Warden repo pins
+    # blastRadius.namespace to `demo`, so a patch aimed anywhere else is
+    # denied by policy before it reaches the proxy's dispatch.

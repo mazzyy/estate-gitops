@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: checkout-svc
+  namespace: demo
+  labels:
+    app: checkout-svc
+    managed-by: gitops
+  annotations:
+    kubernetes.io/change-cause: "initial deployment"
+spec:
+  replicas: 3
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: checkout-svc
+  template:
+    metadata:
+      labels:
+        app: checkout-svc
+        git-sha: "initial"
+    spec:
+      containers:
+        - name: checkout
+          image: ghcr.io/mazzyy/checkout-svc:1.4.2
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            # The Remediator patches THIS value. A malformed scheme here makes
+            # the container exit 1 on startup — a real crashloop, not a simulated
+            # one, which is what the "unedited live execution" rule requires.
+            - name: PAYMENT_ENDPOINT
+              value: "https://payments.internal/v2"
+            - name: LOG_LEVEL
+              value: "info"
+            - name: TIMEOUT_MS
+              value: "3000"
+            # Set to a large value to force an OOMKill under a tight limit.
+            - name: WARMUP_MB
+              value: "8"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              # Lowering this below WARMUP_MB produces a real OOMKilled event.
+              memory: 256Mi
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10

@@ -1,0 +1,57 @@
+# The credential that makes ADR-001 true rather than merely claimed.
+#
+# Warden's estate adapter authenticates as this ServiceAccount. It can get, list
+# and watch — and nothing else. There is no verb here that changes anything.
+#
+# Prove it after applying, and keep the output; it belongs in the demo video:
+#
+#   TOKEN=$(kubectl -n demo get secret warden-reader-token -o jsonpath='{.data.token}' | base64 -d)
+#   APISERVER=$(kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}')
+#   kubectl --token=$TOKEN --server=$APISERVER -n demo get pods                    # works
+#   kubectl --token=$TOKEN --server=$APISERVER -n demo delete deploy checkout-svc  # Forbidden
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: warden-reader
+  namespace: demo
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: warden-reader
+  namespace: demo
+rules:
+  - apiGroups: [""]
+    resources: [pods, pods/log, events, services, configmaps]
+    verbs: [get, list, watch]
+  - apiGroups: ["apps"]
+    resources: [deployments, replicasets]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: warden-reader
+  namespace: demo
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: warden-reader
+subjects:
+  - kind: ServiceAccount
+    name: warden-reader
+    namespace: demo
+---
+# On AKS, `kubectl create token --duration` is capped by an apiserver flag that
+# AKS does not expose, so you cannot mint a token that outlives the hackathon.
+# An annotated Secret of this type gets a non-expiring token from the token
+# controller instead. The ServiceAccount above must exist first.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: warden-reader-token
+  namespace: demo
+  annotations:
+    kubernetes.io/service-account.name: warden-reader
+type: kubernetes.io/service-account-token

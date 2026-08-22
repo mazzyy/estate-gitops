@@ -1,0 +1,62 @@
+name: sync
+
+# The GitOps half of the loop. A merged pull request — including one opened by
+# Warden's Remediator — reaches the cluster here and nowhere else.
+#
+# This is what makes "the agent's only write primitive is a pull request" a
+# complete story rather than half of one: the agent proposes, a human merges,
+# and this workflow is the only thing in the system holding a credential that
+# can change the estate.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/**"
+      - "rbac/**"
+      - "namespace.yaml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate manifests
+        run: |
+          # Catch a malformed patch before it reaches the cluster. A Warden PR
+          # is reviewed by a human, but humans approve broken YAML too.
+          python3 -c "
+          import glob, yaml, sys
+          for path in glob.glob('apps/**/*.yaml', recursive=True) + ['namespace.yaml']:
+              if path.endswith('kustomization.yaml'): continue
+              with open(path) as fh:
+                  list(yaml.safe_load_all(fh))
+              print('ok', path)
+          "
+
+      # Requires an AZURE_CREDENTIALS secret (service principal JSON).
+      # az ad sp create-for-rbac --name warden-sync --role Contributor \
+      #   --scopes /subscriptions/$SUB/resourceGroups/rg-warden --sdk-auth
+      - uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - uses: azure/aks-set-context@v4
+        with:
+          resource-group: ${{ vars.AZ_RG || 'rg-warden' }}
+          cluster-name: ${{ vars.AKS_NAME || 'aks-warden' }}
+
+      - name: Apply
+        run: |
+          kubectl apply -f namespace.yaml
+          kubectl apply -f apps/checkout-svc/
+          kubectl annotate deployment/checkout-svc -n demo \
+            "kubernetes.io/change-cause=${{ github.event.head_commit.message }}" --overwrite
+
+      - name: Wait for rollout
+        run: kubectl rollout status deployment/checkout-svc -n demo --timeout=120s

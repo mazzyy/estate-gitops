@@ -84,7 +84,7 @@ spec:
               value: "3000"
             # Raise above the memory limit below to force a real OOMKill.
             - name: WARMUP_MB
-              value: "128"
+              value: "8"
           resources:
             requests:
               cpu: 50m

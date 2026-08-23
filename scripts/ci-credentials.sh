@@ -46,9 +46,13 @@ echo "${GREEN}✓${RESET} token is scoped to $NS and cannot delete, read secrets
 
 if [[ "${1:-}" == "--set" ]]; then
   command -v gh >/dev/null || { echo "${RED}gh not installed${RESET}"; exit 2; }
-  printf '%s' "$APISERVER" | gh secret set KUBE_APISERVER --repo "$REPO" --body-file -
-  printf '%s' "$TOKEN"     | gh secret set KUBE_TOKEN     --repo "$REPO" --body-file -
-  printf '%s' "$CA"        | gh secret set KUBE_CA        --repo "$REPO" --body-file -
+  # No --body flag and no --body-file: `gh secret set` reads the value from
+  # stdin when neither is given. --body-file does not exist in every gh
+  # version, and passing the value as --body would put a live cluster token
+  # into the shell history.
+  printf '%s' "$APISERVER" | gh secret set KUBE_APISERVER --repo "$REPO"
+  printf '%s' "$TOKEN"     | gh secret set KUBE_TOKEN     --repo "$REPO"
+  printf '%s' "$CA"        | gh secret set KUBE_CA        --repo "$REPO"
   echo "${GREEN}✓${RESET} KUBE_APISERVER, KUBE_TOKEN, KUBE_CA set on $REPO"
   echo "${DIM}nothing was printed — the token never touched your scrollback${RESET}"
   exit 0

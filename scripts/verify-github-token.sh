@@ -44,24 +44,51 @@ KEY_PATH=$(envval GITHUB_APP_PRIVATE_KEY_PATH)
 
 IDENTITY="personal access token"
 ENFORCED=0
-if [[ -n "$APP_ID" && -n "$INSTALL_ID" && -f "${KEY_PATH/#\~/$HOME}" ]]; then
-  TOKEN=$(python3 - "$APP_ID" "$INSTALL_ID" "${KEY_PATH/#\~/$HOME}" <<'PY' 2>/dev/null
-import sys
-from github import Auth
-app_id, install_id, key_path = sys.argv[1], int(sys.argv[2]), sys.argv[3]
-auth = Auth.AppAuth(app_id, open(key_path).read()).get_installation_auth(
-    install_id, token_permissions={"contents": "write", "pull_requests": "write", "metadata": "read"}
-)
-print(auth.token)
-PY
-  )
-  if [[ -n "$TOKEN" ]]; then
-    IDENTITY="GitHub App $APP_ID · installation $INSTALL_ID"
-    ENFORCED=1
+RESOLVED_KEY="${KEY_PATH/#\~/$HOME}"
+if [[ -n "$APP_ID" && -n "$INSTALL_ID" ]]; then
+  if [[ ! -f "$RESOLVED_KEY" ]]; then
+    echo "${YELLOW}GITHUB_APP_PRIVATE_KEY_PATH points at ${RESOLVED_KEY:-<empty>}, which does not exist."
+    echo "Falling back to the PAT.${RESET}"
+    echo
   else
-    echo "${YELLOW}GITHUB_APP_* is set but minting an installation token failed;"
-    echo "falling back to the PAT. Run in the warden venv so PyGithub is importable.${RESET}"
-    TOKEN=$(envval GITHUB_TOKEN)
+    # stderr goes to a file rather than /dev/null. An earlier version threw the
+    # error away and printed a guess ("run in the venv"), which sent the reader
+    # looking in the wrong place — the actual failure was something else
+    # entirely. A fallback that hides why it fell back is worse than a crash.
+    MINT_ERR=$(mktemp)
+    TOKEN=$(python3 - "$APP_ID" "$INSTALL_ID" "$RESOLVED_KEY" <<'PY' 2>"$MINT_ERR"
+import sys
+from github import Auth, GithubIntegration
+
+app_id, install_id, key_path = sys.argv[1], int(sys.argv[2]), sys.argv[3]
+with open(key_path) as fh:
+    key = fh.read()
+
+# GithubIntegration, not `Auth.AppAuth(...).get_installation_auth(...).token`.
+# The bare auth object is not attached to a Requester, so reading `.token`
+# raises "Method withRequester(Requester) must be called first" before any
+# request is made. Warden's own client avoids this by handing the auth to
+# `Github(auth=...)`, which does the wiring; a standalone script has no Github
+# object, so it uses the integration API instead.
+integration = GithubIntegration(auth=Auth.AppAuth(app_id, key))
+print(
+    integration.get_access_token(
+        install_id,
+        permissions={"contents": "write", "pull_requests": "write", "metadata": "read"},
+    ).token
+)
+PY
+    )
+    if [[ -n "$TOKEN" ]]; then
+      IDENTITY="GitHub App $APP_ID · installation $INSTALL_ID"
+      ENFORCED=1
+    else
+      echo "${YELLOW}Could not mint an installation token. Falling back to the PAT.${RESET}"
+      echo "${DIM}$(tail -6 "$MINT_ERR")${RESET}"
+      echo
+      TOKEN=$(envval GITHUB_TOKEN)
+    fi
+    rm -f "$MINT_ERR"
   fi
 fi
 [[ -n "$TOKEN" ]] || { echo "${RED}no GitHub credential in env or $ENV_FILE${RESET}"; exit 2; }

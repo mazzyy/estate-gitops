@@ -7,7 +7,7 @@ metadata:
     app: checkout-svc
     managed-by: gitops
   annotations:
-    kubernetes.io/change-cause: "perf: trim checkout-svc memory footprint"
+    kubernetes.io/change-cause: "fix: restore checkout-svc to known-good configuration"
 spec:
   replicas: 3
   revisionHistoryLimit: 10
@@ -18,7 +18,7 @@ spec:
     metadata:
       labels:
         app: checkout-svc
-        git-sha: "36bfbcf"
+        git-sha: "0b940fc"
     spec:
       containers:
         - name: checkout
@@ -92,7 +92,7 @@ spec:
             limits:
               cpu: 500m
               # Lowering this below WARMUP_MB produces a real OOMKilled event.
-              memory: 64Mi
+              memory: 256Mi
           readinessProbe:
             httpGet:
               path: /healthz

@@ -7,7 +7,7 @@ metadata:
     app: checkout-svc
     managed-by: gitops
   annotations:
-    kubernetes.io/change-cause: "perf: trim checkout-svc memory footprint"
+    kubernetes.io/change-cause: "fix: Correct PAYMENT_ENDPOINT scheme for checkout-svc"
 spec:
   replicas: 3
   revisionHistoryLimit: 10
